@@ -2597,19 +2597,84 @@ async def auto_filter(client, name, msg, reply_msg, ai_search, spoll=False):
                     continue
                 else:
                     search = search + x + " "
-            search = re.sub(r"\b(pl(i|e)*?(s|z+|ease|se|ese|(e+)s(e)?)|((send|snd|giv(e)?|gib)(\sme)?)|movie(s)?|new|latest|bro|bruh|broh|helo|that|find|dubbed|link|venum|iruka|pannunga|pannungga|anuppunga|anupunga|anuppungga|anupungga|film|undo|kitti|kitty|tharu|kittumo|kittum|movie|any(one)|with\ssubtitle(s)?)", "", search, flags=re.IGNORECASE)
+            search = re.sub(r"\b(pl(i|e)*?(s|z+|ease|se|ese|(e+)s(e)?)|((send|snd|giv(e)?|gib)(\sme)?)|movie(s)?|new|latest|bro|bruh|broh|helo|that|find|dubbed|link|venum|iruka|pannunga|pannungga|anuppunga|anupunga|anuppungga|anupungga|film|undo|kitti|kitty|tharu|kittumo|kittum|book|any(one)|with\ssubtitle(s)?)", "", search, flags=re.IGNORECASE)
             search = re.sub(r"\s+", " ", search).strip()
             search = search.replace("-", " ")
             search = search.replace(":", "")
             search = search.replace(".", "")
             files, offset, total_results = await get_search_results(message.chat.id ,search, offset=0, filter=True)
             settings = await get_settings(message.chat.id)
-            if not files:
-                if settings["spell_check"]:
-                    return await advantage_spell_chok(client, name, msg, reply_msg, ai_search)
-                else:
-                    return await reply_msg.edit_text(f"**⚠️ No File Found For Your Query - {name}**\n**Make Sure Spelling Is Correct.**")
+
+            # if not files:
+            #     if settings["spell_check"]:
+            #         return await advantage_spell_chok(client, name, msg, reply_msg, ai_search)
+            #     else:
+            #         return await reply_msg.edit_text(f"**⚠️ No File Found For Your Query - {name}**\n**Make Sure Spelling Is Correct.**")
+
+            if not files: # if no files found
+                results = []
+                original_message = f"**⚠️ No File Found For Your Query - {name}. Initiating Deep Search**\n** Tr.**"
+                
+                try:
+                    # First LibGen attempt
+                    await reply_msg.edit_text(f"🔍 Doing a deep search for '{name}'...")
+                    results = await libgen_search(name)
+                    
+                    if results:
+                        # Show first LibGen results
+                        search_key = str(uuid4())
+                        search_cache[search_key] = {
+                            'results': results,
+                            'query': name,
+                            'time': datetime.now()
+                        }
+                        buttons = await create_search_buttons(results, search_key, 1)
+                        response = [
+                            f"📚 Found {len(results)} LibGen results for <b>{name}</b>:",
+                            f"Rᴇǫᴜᴇsᴛᴇᴅ Bʏ ☞ {message.from_user.mention if message.from_user else 'Unknown User'}",
+                            f"Sʜᴏᴡɪɴɢ ʀᴇsᴜʟᴛs ғʀᴏᴍ ᴛʜᴇ Mᴀɢɪᴄᴀʟ Lɪʙʀᴀʀʏ",
+                            f"📑 Page 1/{(len(results) + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE}"
+                        ]
+                        return await reply_msg.edit("\n".join(response), reply_markup=buttons, parse_mode=enums.ParseMode.HTML)
+
+                except Exception as e:
+                    logger.error(f"LibGen fallback error: {e}")
+
+                # If first LibGen attempt failed or had no results
+                if not results:
+                    if settings["spell_check"]:
+                        return await advantage_spell_chok(client, name, msg, reply_msg, ai_search)
+                    else:
+                        # Second LibGen fallback attempt
+                        try:
+                            await reply_msg.edit_text(f"🔍 Trying alternative search for '{name}'...")
+                            results = await libgen_search(name)
+                            
+                            if results:
+                                search_key = str(uuid4())
+                                search_cache[search_key] = {
+                                    'results': results,
+                                    'query': name,
+                                    'time': datetime.now()
+                                }
+                                buttons = await create_search_buttons(results, search_key, 1)
+                                response = [
+                                    f"📚 Found {len(results)} LibGen results for <b>{name}</b>:",
+                                    f"Rᴇǫᴜᴇsᴛᴇᴅ Bʏ ☞ {message.from_user.mention if message.from_user else 'Unknown User'}",
+                                    f"Sʜᴏᴡɪɴɢ ʀᴇsᴜʟᴛs ғʀᴏᴍ ᴛʜᴇ Mᴀɢɪᴄᴀʟ Lɪʙʀᴀʀʏ",
+                                    f"📑 Page 1/{(len(results) + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE}"
+                                ]
+                                return await reply_msg.edit("\n".join(response), reply_markup=buttons, parse_mode=enums.ParseMode.HTML)
+                            
+                        except Exception as e:
+                            logger.error(f"Secondary LibGen error: {e}")
+
+                        # Final fallback if all attempts fail
+                        return await reply_msg.edit_text(f"**⚠️ No File Found For Your Query - {name}**\n**Make Sure Spelling Is Correct.**") 
+            
+            
         else:
+            await reply_msg.edit_text("⚠️ Your message is too long. Please enter a shorter query (less than 100 characters).")
             return
     else:
         message = msg.message.reply_to_message  # msg will be callback query
@@ -2799,7 +2864,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
         logger.exception(e)
         reqst_gle = mv_rqst.replace(" ", "+")
         button = [[
-            InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
+            InlineKeyboardButton("MSG HERE", url=f"https://t.me/motumovies")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
@@ -2811,7 +2876,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
     if not movies:
         reqst_gle = mv_rqst.replace(" ", "+")
         button = [[
-            InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
+            InlineKeyboardButton("MSG HERE", url=f"https://t.me/motumovies")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
@@ -2837,7 +2902,7 @@ async def advantage_spell_chok(client, name, msg, reply_msg, vj_search):
                 break
         reqst_gle = mv_rqst.replace(" ", "+")
         button = [[
-            InlineKeyboardButton("Gᴏᴏɢʟᴇ", url=f"https://www.google.com/search?q={reqst_gle}")
+            InlineKeyboardButton("MSG HERE", url=f"https://t.me/motumovies{reqst_gle}")
         ]]
         if NO_RESULTS_MSG:
             await client.send_message(chat_id=LOG_CHANNEL, text=(script.NORSLTS.format(reqstr.id, reqstr.mention, mv_rqst)))
